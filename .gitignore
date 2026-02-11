@@ -33,3 +33,8 @@ build/
 
 API_EXAMPLES.md
 README.md 
+
+frontend/
+start-dev.bat
+
+QUICKSTART.md
