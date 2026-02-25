@@ -1,5 +1,6 @@
 const db = require('../db');
 const soapService = require('../services/soapService');
+const qrCodeService = require('../services/qrCodeService');
 const logger = require('../utils/logger');
 const { SIM } = require('../models');
 
@@ -9,16 +10,16 @@ const { SIM } = require('../models');
 const getAllSims = async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT s.*, 
+      `SELECT s.sim_id as id, s.iccid, s.msisdn_id, np.msisdn, s.price, s.status, 
+              s.branch_id, s.customer_id, s.plan_id, s.created_at,
               b.name as branch_name, 
               c.full_name as customer_name,
-              p.name as plan_name,
-              np.number as phone_number
+              p.name as plan_name
        FROM sims s
        LEFT JOIN branches b ON s.branch_id = b.branch_id
        LEFT JOIN customers c ON s.customer_id = c.customer_id
        LEFT JOIN plans p ON s.plan_id = p.plan_id
-       LEFT JOIN number_pool np ON s.msisdn = np.msisdn
+       LEFT JOIN number_pool np ON s.msisdn_id = np.id
        ORDER BY s.created_at DESC`
     );
     res.json({ success: true, data: rows, count: rows.length });
@@ -39,12 +40,12 @@ const getSimById = async (req, res, next) => {
               b.name as branch_name, 
               c.full_name as customer_name,
               p.name as plan_name,
-              np.number as phone_number
+              np.msisdn
        FROM sims s
        LEFT JOIN branches b ON s.branch_id = b.branch_id
        LEFT JOIN customers c ON s.customer_id = c.customer_id
        LEFT JOIN plans p ON s.plan_id = p.plan_id
-       LEFT JOIN number_pool np ON s.msisdn = np.msisdn
+       LEFT JOIN number_pool np ON s.msisdn_id = np.id
        WHERE s.sim_id = $1`,
       [id]
     );
@@ -70,11 +71,11 @@ const getSimsByBranch = async (req, res, next) => {
       `SELECT s.*, 
               c.full_name as customer_name,
               p.name as plan_name,
-              np.number as phone_number
+              np.msisdn
        FROM sims s
        LEFT JOIN customers c ON s.customer_id = c.customer_id
        LEFT JOIN plans p ON s.plan_id = p.plan_id
-       LEFT JOIN number_pool np ON s.msisdn = np.msisdn
+       LEFT JOIN number_pool np ON s.msisdn_id = np.id
        WHERE s.branch_id = $1
        ORDER BY s.created_at DESC`,
       [branchId]
@@ -97,11 +98,11 @@ const getSimsByCustomer = async (req, res, next) => {
       `SELECT s.*, 
               b.name as branch_name, 
               p.name as plan_name,
-              np.number as phone_number
+              np.msisdn
        FROM sims s
        LEFT JOIN branches b ON s.branch_id = b.branch_id
        LEFT JOIN plans p ON s.plan_id = p.plan_id
-       LEFT JOIN number_pool np ON s.msisdn = np.msisdn
+       LEFT JOIN number_pool np ON s.msisdn_id = np.id
        WHERE s.customer_id = $1
        ORDER BY s.created_at DESC`,
       [customerId]
@@ -128,13 +129,17 @@ const createSim = async (req, res, next) => {
 
     const simData = sim.toDatabase();
     const { rows } = await db.query(
-      'INSERT INTO sims (iccid, price, status, branch_id, customer_id, plan_id, msisdn) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-      [simData.iccid, simData.price, simData.status, simData.branch_id, simData.customer_id, simData.plan_id, simData.msisdn]
+      'INSERT INTO sims (iccid, price, status, branch_id, customer_id, plan_id, msisdn_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [simData.iccid, simData.price, simData.status, simData.branch_id, simData.customer_id, simData.plan_id, simData.msisdn_id]
     );
 
-    logger.info('SIM created', { simId: rows[0].sim_id });
+    logger.info('SIM created', { simId: rows[0].sim_id, iccid: rows[0].iccid });
     res.status(201).json({ success: true, data: rows[0] });
   } catch (error) {
+    if (error.code === '23505') {
+      logger.error('Duplicate ICCID', { error: error.message });
+      return res.status(409).json({ success: false, message: 'SIM with this ICCID already exists' });
+    }
     logger.error('Error creating SIM', { error: error.message });
     next(error);
   }
@@ -155,8 +160,8 @@ const updateSim = async (req, res, next) => {
 
     const simData = sim.toDatabase();
     const { rows } = await db.query(
-      'UPDATE sims SET iccid = $1, price = $2, status = $3, branch_id = $4, customer_id = $5, plan_id = $6, msisdn = $7 WHERE sim_id = $8 RETURNING *',
-      [simData.iccid, simData.price, simData.status, simData.branch_id, simData.customer_id, simData.plan_id, simData.msisdn, id]
+      'UPDATE sims SET iccid = $1, price = $2, status = $3, branch_id = $4, customer_id = $5, plan_id = $6, msisdn_id = $7 WHERE sim_id = $8 RETURNING *',
+      [simData.iccid, simData.price, simData.status, simData.branch_id, simData.customer_id, simData.plan_id, simData.msisdn_id, id]
     );
 
     if (rows.length === 0) {
@@ -212,7 +217,7 @@ const activateSim = async (req, res, next) => {
 
     // Call SOAP service to activate
     const soapResult = await soapService.activateSIM(sim.iccid, {
-      msisdn: sim.msisdn,
+      msisdn: sim.msisdn_id,
     });
 
     // Update status in database
@@ -344,6 +349,110 @@ const assignPlan = async (req, res, next) => {
   }
 };
 
+/**
+ * Get SIM by ICCID (for scanning)
+ * Returns full SIM information for employee quick lookup
+ */
+const getSimByICCID = async (req, res, next) => {
+  try {
+    const { iccid } = req.params;
+    
+    const { rows } = await db.query(
+      `SELECT s.*, 
+              b.name as branch_name, 
+              c.full_name as customer_name,
+              c.phone as customer_phone,
+              c.email as customer_email,
+              p.name as plan_name,
+              p.price as plan_price,
+              p.data_limit,
+              p.validity_days,
+              np.msisdn
+       FROM sims s
+       LEFT JOIN branches b ON s.branch_id = b.branch_id
+       LEFT JOIN customers c ON s.customer_id = c.customer_id
+       LEFT JOIN plans p ON s.plan_id = p.plan_id
+       LEFT JOIN number_pool np ON s.msisdn_id = np.id
+       WHERE s.iccid = $1`,
+      [iccid]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'SIM not found' });
+    }
+    
+    logger.info('SIM retrieved by ICCID', { iccid });
+    res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    logger.error('Error fetching SIM by ICCID', { iccid: req.params.iccid, error: error.message });
+    next(error);
+  }
+};
+
+/**
+ * Generate QR code image for a SIM (on-demand using ICCID)
+ * Returns base64 image data
+ */
+const getSimQRImage = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    const { rows } = await db.query('SELECT * FROM sims WHERE sim_id = $1', [id]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'SIM not found' });
+    }
+    
+    const sim = rows[0];
+    
+    // Generate QR image on-demand using ICCID (not stored in database)
+    const qrImage = await qrCodeService.generateSimQRImage(sim.sim_id, sim.iccid);
+    
+    logger.info('QR image generated for SIM', { simId: id, iccid: sim.iccid });
+    
+    res.json({
+      success: true,
+      data: {
+        sim_id: sim.sim_id,
+        iccid: sim.iccid,
+        qr_image: qrImage // base64 data URL
+      }
+    });
+  } catch (error) {
+    logger.error('Error generating QR image', { id: req.params.id, error: error.message });
+    next(error);
+  }
+};
+
+/**
+ * Download QR code as PNG file
+ */
+const downloadSimQRCode = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    const { rows } = await db.query('SELECT * FROM sims WHERE sim_id = $1', [id]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'SIM not found' });
+    }
+    
+    const sim = rows[0];
+    
+    // Generate QR image buffer on-demand using ICCID
+    const qrBuffer = await qrCodeService.generateSimQRBuffer(sim.sim_id, sim.iccid);
+    
+    logger.info('QR code downloaded for SIM', { simId: id, iccid: sim.iccid });
+    
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', `attachment; filename="SIM-${sim.iccid}.png"`);
+    res.send(qrBuffer);
+  } catch (error) {
+    logger.error('Error downloading QR code', { id: req.params.id, error: error.message });
+    next(error);
+  }
+};
+
 module.exports = {
   getAllSims,
   getSimById,
@@ -356,4 +465,7 @@ module.exports = {
   deactivateSim,
   changeOwner,
   assignPlan,
+  getSimByICCID,
+  getSimQRImage,
+  downloadSimQRCode,
 };

@@ -10,16 +10,22 @@ const { validateNumberPool } = require('../utils/validators');
 router.get('/', numberPoolController.getAllNumbers);
 
 /**
- * @route   GET /api/number-pool/:msisdn
- * @desc    Get number by MSISDN
- */
-router.get('/:msisdn', numberPoolController.getNumberByMsisdn);
-
-/**
  * @route   GET /api/number-pool/status/:status
  * @desc    Get numbers by status
  */
 router.get('/status/:status', numberPoolController.getNumbersByStatus);
+
+/**
+ * @route   GET /api/number-pool/msisdn/:msisdn
+ * @desc    Get number by MSISDN
+ */
+router.get('/msisdn/:msisdn', numberPoolController.getNumberByMsisdn);
+
+/**
+ * @route   GET /api/number-pool/:id
+ * @desc    Get number by ID
+ */
+router.get('/:id', numberPoolController.getNumberById);
 
 /**
  * @route   POST /api/number-pool
@@ -28,15 +34,15 @@ router.get('/status/:status', numberPoolController.getNumbersByStatus);
 router.post('/', validateNumberPool, numberPoolController.createNumber);
 
 /**
- * @route   PUT /api/number-pool/:msisdn
+ * @route   PUT /api/number-pool/:id
  * @desc    Update number in pool
  */
-router.put('/:msisdn', validateNumberPool, numberPoolController.updateNumber);
+router.put('/:id', validateNumberPool, numberPoolController.updateNumber);
 
 /**
- * @route   DELETE /api/number-pool/:msisdn
+ * @route   DELETE /api/number-pool/:id
  * @desc    Delete number from pool
  */
-router.delete('/:msisdn', numberPoolController.deleteNumber);
+router.delete('/:id', numberPoolController.deleteNumber);
 
 module.exports = router;

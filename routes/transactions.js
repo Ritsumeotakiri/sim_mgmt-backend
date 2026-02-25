@@ -10,6 +10,18 @@ const { validateTransaction } = require('../utils/validators');
 router.get('/', transactionsController.getAllTransactions);
 
 /**
+ * @route   GET /api/transactions/statistics
+ * @desc    Get transaction statistics
+ */
+router.get('/statistics', transactionsController.getTransactionStatistics);
+
+/**
+ * @route   GET /api/transactions/reports/daily
+ * @desc    Get daily transaction report
+ */
+router.get('/reports/daily', transactionsController.getDailyReport);
+
+/**
  * @route   GET /api/transactions/:id
  * @desc    Get transaction by ID with items
  */
@@ -32,5 +44,11 @@ router.get('/branch/:branchId', transactionsController.getTransactionsByBranch);
  * @desc    Process a new transaction (business logic, not simple CRUD)
  */
 router.post('/process', validateTransaction, transactionsController.processTransaction);
+
+/**
+ * @route   POST /api/transactions/:id/cancel
+ * @desc    Cancel a pending transaction
+ */
+router.post('/:id/cancel', transactionsController.cancelTransaction);
 
 module.exports = router;

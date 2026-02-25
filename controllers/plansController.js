@@ -8,7 +8,7 @@ const { Plan } = require('../models');
 const getAllPlans = async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      'SELECT * FROM plans ORDER BY created_at DESC'
+      'SELECT plan_id as id, name, price, duration_days, created_at FROM plans ORDER BY created_at DESC'
     );
     res.json({ success: true, data: rows, count: rows.length });
   } catch (error) {

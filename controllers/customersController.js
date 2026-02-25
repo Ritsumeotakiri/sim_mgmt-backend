@@ -8,7 +8,7 @@ const { Customer } = require('../models');
 const getAllCustomers = async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      'SELECT * FROM customers ORDER BY created_at DESC'
+      'SELECT customer_id as id, full_name, id_number, phone, created_at FROM customers ORDER BY created_at DESC'
     );
     res.json({ success: true, data: rows, count: rows.length });
   } catch (error) {

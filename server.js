@@ -5,6 +5,7 @@ const bodyParser = require('body-parser');
 const logger = require('./utils/logger');
 
 // Import routes
+const dashboardRoutes = require('./routes/dashboard');
 const branchesRoutes = require('./routes/branches');
 const customersRoutes = require('./routes/customers');
 const plansRoutes = require('./routes/plans');
@@ -39,6 +40,7 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/branches', branchesRoutes);
 app.use('/api/customers', customersRoutes);
 app.use('/api/plans', plansRoutes);

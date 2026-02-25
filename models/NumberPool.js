@@ -4,9 +4,8 @@
  */
 class NumberPool {
   constructor(data = {}) {
+    this.id = data.id || null;
     this.msisdn = data.msisdn || '';
-    this.country_code = data.country_code || '+855';
-    this.number = data.number || '';
     this.status = data.status || 'available'; // available, assigned, reserved
     this.created_at = data.created_at || new Date();
     this.updated_at = data.updated_at || new Date();
@@ -24,14 +23,6 @@ class NumberPool {
 
     if (this.msisdn.length > 15) {
       errors.push('MSISDN must not exceed 15 characters');
-    }
-
-    if (!this.number || this.number.trim().length === 0) {
-      errors.push('Number is required');
-    }
-
-    if (this.number.length > 10) {
-      errors.push('Number must not exceed 10 characters');
     }
 
     if (!['available', 'assigned', 'reserved'].includes(this.status)) {
@@ -73,8 +64,6 @@ class NumberPool {
   toDatabase() {
     return {
       msisdn: this.msisdn,
-      country_code: this.country_code,
-      number: this.number,
       status: this.status,
     };
   }
@@ -84,9 +73,8 @@ class NumberPool {
    */
   toJSON() {
     return {
+      id: this.id,
       msisdn: this.msisdn,
-      country_code: this.country_code,
-      number: this.number,
       status: this.status,
       created_at: this.created_at,
       updated_at: this.updated_at,

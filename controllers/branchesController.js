@@ -8,7 +8,7 @@ const { Branch } = require('../models');
 const getAllBranches = async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      'SELECT * FROM branches ORDER BY created_at DESC'
+      'SELECT branch_id as id, name, location, created_at FROM branches ORDER BY branch_id ASC'
     );
     res.json({ success: true, data: rows, count: rows.length });
   } catch (error) {
@@ -60,6 +60,10 @@ const createBranch = async (req, res, next) => {
     logger.info('Branch created', { branchId: rows[0].branch_id });
     res.status(201).json({ success: true, data: rows[0] });
   } catch (error) {
+    if (error.code === '23505') {
+      logger.error('Duplicate branch name', { error: error.message });
+      return res.status(409).json({ success: false, message: 'Branch with this name already exists' });
+    }
     logger.error('Error creating branch', { error: error.message });
     next(error);
   }

@@ -1,26 +1,23 @@
 const db = require('../db');
 const logger = require('../utils/logger');
-const { Transaction, TransactionItem } = require('../models');
 
 /**
- * Get all transactions with details
+ * Get all transactions
  */
 const getAllTransactions = async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT t.*, 
+      `SELECT t.transaction_id as id, t.transaction_type, t.customer_id, 
+              t.user_id, t.branch_id, t.transaction_date, 
+              t.status, t.created_at,
               c.full_name as customer_name,
               u.username as user_name,
-              b.name as branch_name,
-              COUNT(ti.transaction_item_id) as item_count,
-              SUM(ti.amount) as total_amount
+              b.name as branch_name
        FROM transactions t
        LEFT JOIN customers c ON t.customer_id = c.customer_id
        LEFT JOIN users u ON t.user_id = u.user_id
        LEFT JOIN branches b ON t.branch_id = b.branch_id
-       LEFT JOIN transaction_items ti ON t.transaction_id = ti.transaction_id
-       GROUP BY t.transaction_id, c.full_name, u.username, b.name
-       ORDER BY t.transaction_date DESC`
+       ORDER BY t.created_at DESC`
     );
     res.json({ success: true, data: rows, count: rows.length });
   } catch (error) {
@@ -30,18 +27,13 @@ const getAllTransactions = async (req, res, next) => {
 };
 
 /**
- * Get transaction by ID with items
+ * Get transaction by ID
  */
 const getTransactionById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    
-    // Get transaction details
-    const { rows: transactionRows } = await db.query(
-      `SELECT t.*, 
-              c.full_name as customer_name,
-              u.username as user_name,
-              b.name as branch_name
+    const { rows } = await db.query(
+      `SELECT t.*, c.full_name as customer_name, u.username as user_name, b.name as branch_name
        FROM transactions t
        LEFT JOIN customers c ON t.customer_id = c.customer_id
        LEFT JOIN users u ON t.user_id = u.user_id
@@ -50,23 +42,11 @@ const getTransactionById = async (req, res, next) => {
       [id]
     );
 
-    if (transactionRows.length === 0) {
+    if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Transaction not found' });
     }
 
-    // Get transaction items
-    const { rows: itemRows } = await db.query(
-      `SELECT ti.*, s.iccid, s.status as sim_status
-       FROM transaction_items ti
-       LEFT JOIN sims s ON ti.sim_id = s.sim_id
-       WHERE ti.transaction_id = $1`,
-      [id]
-    );
-
-    const transaction = transactionRows[0];
-    transaction.items = itemRows;
-
-    res.json({ success: true, data: transaction });
+    res.json({ success: true, data: rows[0] });
   } catch (error) {
     logger.error('Error fetching transaction by ID', { id: req.params.id, error: error.message });
     next(error);
@@ -80,21 +60,19 @@ const getTransactionsByCustomer = async (req, res, next) => {
   try {
     const { customerId } = req.params;
     const { rows } = await db.query(
-      `SELECT t.*, 
-              u.username as user_name,
-              b.name as branch_name,
-              COUNT(ti.transaction_item_id) as item_count,
-              SUM(ti.amount) as total_amount
+      `SELECT t.transaction_id as id, t.transaction_type, 
+              t.status, t.created_at,
+              COALESCE(SUM(ti.amount), 0) as total_amount,
+              u.username as user_name, b.name as branch_name
        FROM transactions t
        LEFT JOIN users u ON t.user_id = u.user_id
        LEFT JOIN branches b ON t.branch_id = b.branch_id
        LEFT JOIN transaction_items ti ON t.transaction_id = ti.transaction_id
        WHERE t.customer_id = $1
-       GROUP BY t.transaction_id, u.username, b.name
-       ORDER BY t.transaction_date DESC`,
+       GROUP BY t.transaction_id, t.transaction_type, t.status, t.created_at, u.username, b.name
+       ORDER BY t.created_at DESC`,
       [customerId]
     );
-
     res.json({ success: true, data: rows, count: rows.length });
   } catch (error) {
     logger.error('Error fetching transactions by customer', { customerId: req.params.customerId, error: error.message });
@@ -109,21 +87,19 @@ const getTransactionsByBranch = async (req, res, next) => {
   try {
     const { branchId } = req.params;
     const { rows } = await db.query(
-      `SELECT t.*, 
-              c.full_name as customer_name,
-              u.username as user_name,
-              COUNT(ti.transaction_item_id) as item_count,
-              SUM(ti.amount) as total_amount
+      `SELECT t.transaction_id as id, t.transaction_type, t.customer_id,
+              t.status, t.created_at,
+              COALESCE(SUM(ti.amount), 0) as total_amount,
+              c.full_name as customer_name, u.username as user_name
        FROM transactions t
        LEFT JOIN customers c ON t.customer_id = c.customer_id
        LEFT JOIN users u ON t.user_id = u.user_id
        LEFT JOIN transaction_items ti ON t.transaction_id = ti.transaction_id
        WHERE t.branch_id = $1
-       GROUP BY t.transaction_id, c.full_name, u.username
-       ORDER BY t.transaction_date DESC`,
+       GROUP BY t.transaction_id, t.transaction_type, t.customer_id, t.status, t.created_at, c.full_name, u.username
+       ORDER BY t.created_at DESC`,
       [branchId]
     );
-
     res.json({ success: true, data: rows, count: rows.length });
   } catch (error) {
     logger.error('Error fetching transactions by branch', { branchId: req.params.branchId, error: error.message });
@@ -132,85 +108,109 @@ const getTransactionsByBranch = async (req, res, next) => {
 };
 
 /**
- * Process a new transaction (business logic)
- * This is NOT simple CRUD - it handles the complete transaction flow
+ * Get transaction statistics
+ */
+const getTransactionStatistics = async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT 
+        COUNT(DISTINCT t.transaction_id) as total_transactions,
+        COALESCE(SUM(ti.amount), 0) as total_revenue,
+        COALESCE(AVG(ti.amount), 0) as average_transaction,
+        COUNT(DISTINCT t.customer_id) as unique_customers
+       FROM transactions t
+       LEFT JOIN transaction_items ti ON t.transaction_id = ti.transaction_id`
+    );
+    res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    logger.error('Error fetching transaction statistics', { error: error.message });
+    next(error);
+  }
+};
+
+/**
+ * Get daily transaction report
+ */
+const getDailyReport = async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT 
+        DATE(t.created_at) as date,
+        COUNT(DISTINCT t.transaction_id) as transaction_count,
+        COALESCE(SUM(ti.amount), 0) as daily_revenue
+       FROM transactions t
+       LEFT JOIN transaction_items ti ON t.transaction_id = ti.transaction_id
+       WHERE t.created_at >= CURRENT_DATE - INTERVAL '30 days'
+       GROUP BY DATE(t.created_at)
+       ORDER BY date DESC`
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    logger.error('Error fetching daily report', { error: error.message });
+    next(error);
+  }
+};
+
+/**
+ * Process a new transaction
  */
 const processTransaction = async (req, res, next) => {
-  const client = await db.getClient();
-  
   try {
-    const transaction = new Transaction(req.body);
-    const validation = transaction.validate();
+    const { customer_id, user_id, branch_id, transaction_type, items } = req.body;
     
-    if (!validation.isValid) {
-      client.release();
-      return res.status(400).json({ success: false, errors: validation.errors });
-    }
-
-    // Validate transaction items
-    if (!req.body.items || !Array.isArray(req.body.items) || req.body.items.length === 0) {
-      client.release();
-      return res.status(400).json({ success: false, errors: ['Transaction must have at least one item'] });
-    }
-
-    for (const item of req.body.items) {
-      const transactionItem = new TransactionItem(item);
-      const itemValidation = transactionItem.validate();
-      if (!itemValidation.isValid) {
-        client.release();
-        return res.status(400).json({ success: false, errors: itemValidation.errors });
-      }
-    }
-
-    const { transaction_type, customer_id, user_id, branch_id, items } = req.body;
-
-    // Start database transaction
-    await client.query('BEGIN');
-
-    // Create transaction record
-    const { rows: transactionRows } = await client.query(
-      'INSERT INTO transactions (transaction_type, customer_id, user_id, branch_id, status) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [transaction_type, customer_id, user_id, branch_id, 'completed']
+    // Insert transaction
+    const { rows } = await db.query(
+      `INSERT INTO transactions (customer_id, user_id, branch_id, transaction_type, status)
+       VALUES ($1, $2, $3, $4, 'completed')
+       RETURNING *`,
+      [customer_id, user_id, branch_id, transaction_type]
     );
 
-    const transactionRecord = transactionRows[0];
-    const transactionId = transactionRecord.transaction_id;
+    const transaction = rows[0];
 
-    // Process each transaction item
-    for (const item of items) {
-      // Create transaction item
-      await client.query(
-        'INSERT INTO transaction_items (transaction_id, sim_id, amount) VALUES ($1, $2, $3)',
-        [transactionId, item.sim_id, item.amount]
-      );
-
-      // Update SIM based on transaction type
-      if (transaction_type === 'sale') {
-        // Assign SIM to customer
-        await client.query(
-          'UPDATE sims SET customer_id = $1, branch_id = $2 WHERE sim_id = $3',
-          [customer_id, branch_id, item.sim_id]
+    // Insert transaction items if provided
+    if (items && Array.isArray(items) && items.length > 0) {
+      for (const item of items) {
+        await db.query(
+          `INSERT INTO transaction_items (transaction_id, sim_id, amount)
+           VALUES ($1, $2, $3)`,
+          [transaction.transaction_id, item.sim_id, item.amount]
         );
       }
     }
 
-    // Commit transaction
-    await client.query('COMMIT');
-
-    logger.info('Transaction processed', { transactionId, type: transaction_type });
-    res.status(201).json({ 
-      success: true, 
-      message: 'Transaction processed successfully',
-      data: transactionRecord 
-    });
-
+    logger.info('Transaction processed', { transactionId: transaction.transaction_id });
+    res.status(201).json({ success: true, data: transaction });
   } catch (error) {
-    // Rollback on error
-    await client.query('ROLLBACK');
     logger.error('Error processing transaction', { error: error.message });
     next(error);
-  } finally {
-    client.release();
+  }
+};
+
+/**
+ * Cancel transaction
+ */
+const cancelTransaction = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    const { rows } = await db.query(
+      `UPDATE transactions 
+       SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+       WHERE transaction_id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+
+    logger.info('Transaction cancelled', { transactionId: id });
+    res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    logger.error('Error cancelling transaction', { id: req.params.id, error: error.message });
+    next(error);
   }
 };
 
@@ -219,5 +219,8 @@ module.exports = {
   getTransactionById,
   getTransactionsByCustomer,
   getTransactionsByBranch,
+  getTransactionStatistics,
+  getDailyReport,
   processTransaction,
+  cancelTransaction
 };

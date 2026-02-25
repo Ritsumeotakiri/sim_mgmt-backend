@@ -8,7 +8,7 @@ const { User } = require('../models');
 const getAllUsers = async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT u.user_id, u.username, u.role, u.branch_id, u.created_at,
+      `SELECT u.user_id as id, u.username, u.role, u.branch_id, u.created_at,
               b.name as branch_name
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.branch_id

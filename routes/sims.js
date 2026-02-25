@@ -10,10 +10,28 @@ const { validateSIM } = require('../utils/validators');
 router.get('/', simsController.getAllSims);
 
 /**
+ * @route   GET /api/sims/scan/:iccid
+ * @desc    Get SIM info by ICCID (for employee scanning)
+ */
+router.get('/scan/:iccid', simsController.getSimByICCID);
+
+/**
  * @route   GET /api/sims/:id
  * @desc    Get SIM by ID
  */
 router.get('/:id', simsController.getSimById);
+
+/**
+ * @route   GET /api/sims/:id/qrcode
+ * @desc    Get QR code image for a SIM (base64)
+ */
+router.get('/:id/qrcode', simsController.getSimQRImage);
+
+/**
+ * @route   GET /api/sims/:id/qrcode/download
+ * @desc    Download QR code as PNG file
+ */
+router.get('/:id/qrcode/download', simsController.downloadSimQRCode);
 
 /**
  * @route   GET /api/sims/branch/:branchId

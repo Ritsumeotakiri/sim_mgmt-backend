@@ -1,7 +1,3 @@
-/**
- * SIM Model
- * Represents a SIM card in the system
- */
 class SIM {
   constructor(data = {}) {
     this.sim_id = data.sim_id || null;
@@ -11,7 +7,7 @@ class SIM {
     this.branch_id = data.branch_id || null;
     this.customer_id = data.customer_id || null;
     this.plan_id = data.plan_id || null;
-    this.msisdn = data.msisdn || null;
+    this.msisdn_id = data.msisdn_id || null;
     this.created_at = data.created_at || new Date();
   }
 
@@ -103,7 +99,7 @@ class SIM {
       branch_id: this.branch_id,
       customer_id: this.customer_id,
       plan_id: this.plan_id,
-      msisdn: this.msisdn,
+      msisdn_id: this.msisdn_id,
     };
   }
 
@@ -119,7 +115,7 @@ class SIM {
       branch_id: this.branch_id,
       customer_id: this.customer_id,
       plan_id: this.plan_id,
-      msisdn: this.msisdn,
+      msisdn_id: this.msisdn_id,
       created_at: this.created_at,
     };
   }
